@@ -59,13 +59,20 @@ bool vk_init(VkContext *vkcontext, HWND window)
         VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 #elif LINUX_BUILD
 #endif
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
         VK_KHR_SURFACE_EXTENSION_NAME};
+
+        char* validationLayers[] = {
+            "VK_LAYER_KHRONOS_VALIDATION"
+        };
 
     VkInstanceCreateInfo instanceInfo = {};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
     instanceInfo.ppEnabledExtensionNames = surface_extensions;
     instanceInfo.enabledExtensionCount = ArraySize(surface_extensions);
+    instanceInfo.ppEnabledLayerNames = validationLayers;
+    instanceInfo.enabledLayerCount = ArraySize(validationLayers);
     VK_CHECK(vkCreateInstance(&instanceInfo, 0, &vkcontext->instance));
 
     /**
