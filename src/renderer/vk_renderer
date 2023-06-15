@@ -29,6 +29,16 @@
         return false;                                              \
     }
 
+static VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
+    VkDebugUtilsMessageTypeFlagBitsEXT msgSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT msgFlags,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData)
+{
+    std::cout << "Validation error: " << pCallbackData->pMessage << std::endl;
+    return false;
+}
+
 struct VkContext
 {
     VkInstance instance;
@@ -36,6 +46,7 @@ struct VkContext
     VkPhysicalDevice gpu;
     VkDevice device;
     VkSwapchainKHR swapchain;
+    VkDebugUtilsMessengerEXT debugMessenger;
     int graphicsIndex;
 };
 
@@ -46,7 +57,7 @@ struct VkContext
  * @param window is a void pointer for other OS builds
  * @return true if instance was succesfully initialized
  */
-bool vk_init(VkContext *vkcontext, HWND window)
+bool vk_init(VkContext *vkcontext, void* window)
 {
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -63,7 +74,7 @@ bool vk_init(VkContext *vkcontext, HWND window)
         VK_KHR_SURFACE_EXTENSION_NAME};
 
         char* validationLayers[] = {
-            "VK_LAYER_KHRONOS_VALIDATION"
+            "VK_LAYER_KHRONOS_validation"
         };
 
     VkInstanceCreateInfo instanceInfo = {};
@@ -75,6 +86,24 @@ bool vk_init(VkContext *vkcontext, HWND window)
     instanceInfo.enabledLayerCount = ArraySize(validationLayers);
     VK_CHECK(vkCreateInstance(&instanceInfo, 0, &vkcontext->instance));
 
+    auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(vkcontext->instance, "vkCreateDebugUtilsMessengerEXT");
+
+    if (vkCreateDebugUtilsMessengerEXT)
+    {
+        VkDebugUtilsMessengerCreateInfoEXT debugInfo = {};
+        debugInfo.sType= VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        debugInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+        debugInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT   ;
+        debugInfo.pfnUserCallback = (PFN_vkDebugUtilsMessengerCallbackEXT)vk_debug_callback;
+        
+
+        vkCreateDebugUtilsMessengerEXT(vkcontext->instance, &debugInfo, 0, &vkcontext->debugMessenger);
+    }
+    else
+    {
+        return false;
+    }
+    
     /**
      * @brief Localized scope for surface creation
      */
