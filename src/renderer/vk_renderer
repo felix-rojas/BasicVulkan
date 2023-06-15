@@ -1,19 +1,24 @@
 
 #include <vulkan/vulkan.h>
 
-void vk_init()
+struct VkContext
+{
+    VkInstance Instance;
+};
+
+bool vk_init(VkContext* vkcontext)
 {
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Pong";
-    appInfo.pEngineName = "PongEngine";
+    appInfo.pApplicationName = "Vulkan_app";
+    appInfo.pEngineName = "VulkanEngine";
 
     VkInstanceCreateInfo instanceInfo = {};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
 
-    VkInstance instance;
 
-    VkResult res = vkCreateInstance(&instanceInfo, 0, &instance);
+    VkResult res = vkCreateInstance(&instanceInfo, 0, &vkcontext->Instance);
 
+    return true;
 }
