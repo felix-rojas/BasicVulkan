@@ -2,6 +2,7 @@
     "files.associations": {
         "*.ejs": "html",
         "*.rmd": "markdown",
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "vk_renderer": "cpp"
     }
 }

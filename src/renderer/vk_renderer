@@ -1,24 +1,60 @@
-
 #include <vulkan/vulkan.h>
+#ifdef WINDOWS_BUILD
+#include <vulkan/vulkan_win32.h>
+#elif // other OS
+#endif
+#include <iostream>
+
+#ifdef WINDOWS_BUILD
+#elif // other OS
+#endif
+
+#define ArraySize(arr) sizeof((arr)) / sizeof((arr[0]))
+
+#define VK_CHECK(result)                                           \
+    if (result != VK_SUCCESS)                                      \
+    {                                                              \
+        std::cout << "Vulcan Error code: " << result << std::endl; \
+        __debugbreak();                                            \
+        return false;                                              \
+    }
 
 struct VkContext
 {
     VkInstance Instance;
+    VkSurfaceKHR surface;
 };
 
-bool vk_init(VkContext* vkcontext)
+// void pointer for other builds
+bool vk_init(VkContext *vkcontext, void *window)
 {
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan_app";
     appInfo.pEngineName = "VulkanEngine";
 
+    char *extensions[] = {
+#ifdef WINDOWS_BUILD
+        VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+#elif // other OS
+#endif
+        VK_KHR_SURFACE_EXTENSION_NAME};
+
     VkInstanceCreateInfo instanceInfo = {};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
+    instanceInfo.ppEnabledExtensionNames = extensions;
+    instanceInfo.enabledExtensionCount = ArraySize(extensions);
 
-
-    VkResult res = vkCreateInstance(&instanceInfo, 0, &vkcontext->Instance);
+#ifdef WINDOWS_BUILD
+    VK_CHECK(vkCreateInstance(&instanceInfo, 0, &vkcontext->Instance));
+    VkWin32SurfaceCreateInfoKHR surfaceInfo = {};
+    surfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    surfaceInfo.hwnd = (HWND)window;
+    surfaceInfo.hinstance = GetModuleHandleA(0);
+    VK_CHECK(vkCreateWin32SurfaceKHR(vkcontext->Instance, &surfaceInfo, 0, &vkcontext->surface));
+#elif // other OS
+#endif
 
     return true;
 }
