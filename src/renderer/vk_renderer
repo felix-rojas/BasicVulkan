@@ -43,6 +43,7 @@ struct VkContext
 {
     VkInstance instance;
     VkSurfaceKHR surface;
+    VkSurfaceFormatKHR surface_format;
     VkPhysicalDevice gpu;
     VkDevice device;
     VkSwapchainKHR swapchain;
@@ -169,6 +170,7 @@ bool vk_init(VkContext *vkcontext, void *window)
         VkDeviceQueueCreateInfo queueInfo = {};
         queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueInfo.queueFamilyIndex = vkcontext->graphicsIndex;
+        queueInfo.queueCount = 1;
         queueInfo.pQueuePriorities = &queuePriority;
 
         char *swapchain_extensions[] = {
@@ -185,10 +187,41 @@ bool vk_init(VkContext *vkcontext, void *window)
     }
     // define the swapchain to manage the images
     {
+        // minimum and maximum image count
+        VkSurfaceCapabilitiesKHR surface_capabilities = {};
+        VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vkcontext->gpu, vkcontext->surface, &surface_capabilities));
+        uint32_t imgCount = surface_capabilities.minImageCount + 1;
+        imgCount = imgCount > surface_capabilities.maxImageCount - 1 ? imgCount - 1 : imgCount;
+
+        uint32_t format_count;
+        // suballocation from main memory
+        VkSurfaceFormatKHR surface_formats[10];
+        vkGetPhysicalDeviceSurfaceFormatsKHR(vkcontext->gpu, vkcontext->surface, &format_count, 0);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(vkcontext->gpu, vkcontext->surface, &format_count, surface_formats);
+
+        for (uint32_t i = 0; i < format_count; i++)
+        {
+            VkSurfaceFormatKHR format = surface_formats[i];
+            // most common format, it stores 
+            // 8-bit colors blue, red, green and alpha
+            if (format.format == VK_FORMAT_B8G8R8A8_SRGB)
+            {
+                vkcontext->surface_format = format;
+            }
+        }
+        
+
         VkSwapchainCreateInfoKHR swapchainInfo = {};
         swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        // ignore alpha channel
+        swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         swapchainInfo.surface = vkcontext->surface;
+        swapchainInfo.preTransform = surface_capabilities.currentTransform;
+        swapchainInfo.imageExtent = surface_capabilities.currentExtent;
+        swapchainInfo.minImageCount = imgCount;
+        swapchainInfo.imageArrayLayers = 1;
+        swapchainInfo.imageFormat = vkcontext->surface_format.format;
 
         VK_CHECK(vkCreateSwapchainKHR(vkcontext->device, &swapchainInfo, 0, &vkcontext->swapchain));
     }
