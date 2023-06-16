@@ -1,7 +1,11 @@
 #include <windows.h>
 #include "renderer/vk_renderer"
+#include "defines.h"
+#include "platform.h"
 
-static bool is_running = true;
+// global variable is just static type but makes it easier to understand
+global_variable bool is_running = true;
+global_variable HWND window;
 
 LRESULT CALLBACK platform_window_callback(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -15,7 +19,7 @@ LRESULT CALLBACK platform_window_callback(HWND window, UINT msg, WPARAM wParam, 
     return DefWindowProcA(window, msg, wParam, lParam);
 }
 
-bool platform_create_window(HWND *window)
+bool platform_create_window()
 {
     HINSTANCE instance = GetModuleHandleA(0);
     WNDCLASSA wc = {};
@@ -26,11 +30,11 @@ bool platform_create_window(HWND *window)
 
     if (!RegisterClassA(&wc))
     {
-        MessageBoxA(*window, "Failed registering window class", "Error", MB_ICONEXCLAMATION | MB_OK);
+        MessageBoxA(window, "Failed registering window class", "Error", MB_ICONEXCLAMATION | MB_OK);
         return false;
     }
 
-    *window = CreateWindowExA(
+    window = CreateWindowExA(
         WS_EX_APPWINDOW,
         "vulkan_window",
         "vulkan_app",
@@ -39,30 +43,29 @@ bool platform_create_window(HWND *window)
 
     if (window == 0)
     {
-        MessageBoxA(*window, "Failed creating window", "Error", MB_ICONEXCLAMATION | MB_OK);
+        MessageBoxA(window, "Failed creating window", "Error", MB_ICONEXCLAMATION | MB_OK);
         return false;
     }
 
-    ShowWindow(*window, SW_SHOW);
+    ShowWindow(window, SW_SHOW);
     return true;
 }
 
 void platform_update_window(HWND window)
 {
     MSG msg;
-    while (PeekMessageA(&msg, window, 0,0, PM_REMOVE))
+    while (PeekMessageA(&msg, window, 0, 0, PM_REMOVE))
     {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-    
 }
 
 int main()
 {
     VkContext vkcontext = {};
-    HWND window = 0;
-    if (!platform_create_window(&window))
+
+    if (!platform_create_window())
     {
         return -1;
     }
@@ -75,8 +78,20 @@ int main()
     while (is_running)
     {
         platform_update_window(window);
-        vk_render(&vkcontext);
+        if (!vk_render(&vkcontext))
+        {
+            return -1;
+        }
     }
 
     return 0;
+}
+
+void platform_get_window_size(uint32_t *pWidth, uint32_t *pHeight)
+{
+    RECT rect;
+    GetClientRect(window, &rect);
+
+    *pWidth = rect.right - rect.left;
+    *pHeight =      rect.bottom - rect.top;
 }

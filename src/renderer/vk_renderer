@@ -4,7 +4,7 @@
  * @brief file to initialize vulkan depending on the OS
  * @version 0.1
  * @date 2023-06-15
- * @todo change arrays to std::vector, 
+ * @todo change arrays to std::vector,
  * @bug Validation error: Validation Error: [ VUID-VkPresentInfoKHR-pImageIndices-01296 ] Object 0: handle = 0x1b1eb589590, type = VK_OBJECT_TYPE_QUEUE; | MessageID = 0xc7aabc16 | vkQueuePresentKHR(): pSwapchains[0] images passed to present must be in layout VK_IMAGE_LAYOUT_PRESENT_SRC_KHR or VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR but is in VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL. The Vulkan spec states: Each element of pImageIndices must be the index of a presentable image acquired from the swapchain specified by the corresponding element of the pSwapchains array, and the presented image subresource must be in the VK_IMAGE_LAYOUT_PRESENT_SRC_KHR layout at the time the operation is executed on a VkDevice (https://github.com/KhronosGroup/Vulkan-Docs/search?q=)VUID-VkPresentInfoKHR-pImageIndices-01296)
  *
  */
@@ -16,6 +16,7 @@
 #endif
 #include <iostream>
 #include "vk_init.cpp"
+#include "platform.h"
 
 #define ArraySize(arr) sizeof((arr)) / sizeof((arr[0]))
 
@@ -43,6 +44,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
 
 struct VkContext
 {
+    VkExtent2D screenSize;
+
     VkInstance instance;
     VkSurfaceKHR surface;
     VkSurfaceFormatKHR surface_format;
@@ -51,9 +54,14 @@ struct VkContext
     VkSwapchainKHR swapchain;
     VkDebugUtilsMessengerEXT debugMessenger;
     VkQueue graphicsQueue;
+    VkCommandPool commandPool;
+    VkRenderPass renderPass;
+
     uint32_t swapchainImgCount;
     VkImage swapchainImages[5];
-    VkCommandPool commandPool;
+
+    VkImageView swapchainImageViews[5];
+    VkFramebuffer frameBuffers[5];
 
     VkSemaphore submitSemaphore;
     VkSemaphore acquireSemaphore;
@@ -70,6 +78,8 @@ struct VkContext
  */
 bool vk_init(VkContext *vkcontext, void *window)
 {
+    platform_get_window_size(&vkcontext->screenSize.width, &vkcontext->screenSize.height);
+
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan_app";
@@ -226,7 +236,7 @@ bool vk_init(VkContext *vkcontext, void *window)
         // Swapchain is defined with surface and pretransforms to show the image
         VkSwapchainCreateInfoKHR swapchainInfo = {};
         swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        swapchainInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         // ignore alpha channel
         swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         swapchainInfo.surface = vkcontext->surface;
@@ -241,6 +251,78 @@ bool vk_init(VkContext *vkcontext, void *window)
         // Swapchain images are given but it needs a display to show them
         VK_CHECK(vkGetSwapchainImagesKHR(vkcontext->device, vkcontext->swapchain, &vkcontext->swapchainImgCount, 0));
         VK_CHECK(vkGetSwapchainImagesKHR(vkcontext->device, vkcontext->swapchain, &vkcontext->swapchainImgCount, vkcontext->swapchainImages));
+
+        // create image views
+        VkImageViewCreateInfo viewInfo = {};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.format = vkcontext->surface_format.format;
+        // we are only passing a 2d array flat image
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.layerCount = 1;
+        viewInfo.subresourceRange.levelCount = 1;
+
+        for (uint32_t i = 0; i < vkcontext->swapchainImgCount; i++)
+        {
+            viewInfo.image = vkcontext->swapchainImages[i];
+            VK_CHECK(vkCreateImageView(vkcontext->device, &viewInfo, 0, &vkcontext->swapchainImageViews[i]));
+        }
+    }
+
+    // render pass
+    {
+        VkAttachmentDescription attachment = {};
+        // clear the image to this color in the rendering loop
+        attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        // we dont know the initial layout
+        attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        // store the result
+        attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        // sampling with 1 bit, take the image as is
+        attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        attachment.format = vkcontext->surface_format.format;
+
+        // at least 1 subpass is necessary
+        VkAttachmentReference colorAttachmentReference = {};
+        colorAttachmentReference.attachment = 0;
+        colorAttachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentDescription attachments[] = {
+            attachment};
+
+        VkSubpassDescription subpassDescription = {};
+        subpassDescription.colorAttachmentCount = 1;
+        subpassDescription.pColorAttachments = &colorAttachmentReference;
+
+        VkRenderPassCreateInfo renderPassCreateInfo = {};
+        renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassCreateInfo.pAttachments = attachments;
+        renderPassCreateInfo.attachmentCount = ArraySize(attachments);
+
+        renderPassCreateInfo.subpassCount = 1;
+        renderPassCreateInfo.pSubpasses = &subpassDescription;
+
+        VK_CHECK(vkCreateRenderPass(vkcontext->device, &renderPassCreateInfo, 0, &vkcontext->renderPass));
+    }
+
+    // frame buffers
+    {
+        VkFramebufferCreateInfo frameBufferInfo = {};
+        // buffer the frames in the entire screen
+        frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        frameBufferInfo.height = vkcontext->screenSize.height;
+        frameBufferInfo.width = vkcontext->screenSize.width;
+        // image views of the image swap
+        frameBufferInfo.renderPass = vkcontext->renderPass;
+        frameBufferInfo.layers = 1;
+        frameBufferInfo.attachmentCount = 1;
+
+        for (uint32_t i = 0; i < vkcontext->swapchainImgCount; i++)
+        {
+            frameBufferInfo.pAttachments = &vkcontext->swapchainImageViews[i];
+            VK_CHECK(vkCreateFramebuffer(vkcontext->device, &frameBufferInfo, 0, &vkcontext->frameBuffers[i]));
+        }
     }
 
     // create command pool
@@ -287,46 +369,31 @@ bool vk_render(VkContext *vkcontext)
     VkCommandBufferBeginInfo beginInfo = cmd_begin_info();
     VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
+    VkClearValue clearValue = {};
+    clearValue.color = {1, 0, 1, 1};
+
+    // subpass commands will be recorded, on each draw call will be used executed
+    VkRenderPassBeginInfo renderPassBeginInfo = {};
+    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassBeginInfo.renderPass = vkcontext->renderPass;
+    renderPassBeginInfo.renderArea.extent = vkcontext->screenSize;
+    renderPassBeginInfo.pClearValues = &clearValue;
+    renderPassBeginInfo.framebuffer = vkcontext->frameBuffers[ImageIndex];
+    renderPassBeginInfo.clearValueCount = 1;
+    renderPassBeginInfo.pClearValues = &clearValue;
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
     // Rendering commands
     {
-        VkClearColorValue color = {0, 1, 1, 1};
-        VkImageMemoryBarrier imageBarrier = {};
-        imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        imageBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        imageBarrier.srcAccessMask = 0;
-        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        imageBarrier.image = vkcontext->swapchainImages[0]; // The image to transition
-        imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        imageBarrier.subresourceRange.baseMipLevel = 0;
-        imageBarrier.subresourceRange.levelCount = 1;
-        imageBarrier.subresourceRange.baseArrayLayer = 0;
-        imageBarrier.subresourceRange.layerCount = 1;
-
-        vkCmdPipelineBarrier(
-            commandBuffer,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0,
-            0,
-            nullptr,
-            0,
-            nullptr,
-            1,
-            &imageBarrier);
-
-        VkImageSubresourceRange range = {};
-        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        range.baseMipLevel = 0;
-        range.layerCount = 1;
-        range.levelCount = 1;
-
-        vkCmdClearColorImage(commandBuffer, vkcontext->swapchainImages[ImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
     }
+    
+    vkCmdEndRenderPass(commandBuffer);
 
-    VK_CHECK(vkEndCommandBuffer(commandBuffer));
     // what are we sending to the pipeline to render, it can be shaders, etc...
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
