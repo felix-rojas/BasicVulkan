@@ -330,6 +330,48 @@ bool vk_init(VkContext *vkcontext, void *window)
     // pipeline
     // this is one of the most expensive calls, so be careful 
     {
+        uint32_t vertexFileSize;
+        char* vertexcode = platform_read_file("assets/shaders/shader.vert.spv", &vertexFileSize);
+
+        VkShaderModuleCreateInfo vertexShaderInfo={};
+        vertexShaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        vertexShaderInfo.pCode = (uint32_t*) vertexcode;
+        vertexShaderInfo.codeSize = vertexFileSize;
+        VkShaderModule vertexShader;
+        VK_CHECK(vkCreateShaderModule(vkcontext->device, &vertexShaderInfo, 0, &vertexShader));
+
+        delete vertexcode;
+
+        VkPipelineShaderStageCreateInfo vertexStage;
+        vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertexStage.pName = "main"; //specify the fnction name in the shader
+        vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertexStage.module = vertexShader;
+
+        uint32_t fragmentFileSize;
+        char* fragmentcode = platform_read_file("assets/shaders/shader.frag.spv", &fragmentFileSize);
+
+        VkShaderModuleCreateInfo fragmentShaderInfo={};
+        fragmentShaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        fragmentShaderInfo.pCode = (uint32_t*) fragmentcode;
+        fragmentShaderInfo.codeSize = fragmentFileSize;
+        VkShaderModule fragmentShader;
+        VK_CHECK(vkCreateShaderModule(vkcontext->device, &fragmentShaderInfo, 0, &fragmentShader));
+
+        delete fragmentcode;
+
+        VkPipelineShaderStageCreateInfo fragmentStage;
+        fragmentStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragmentStage.pName = "main"; //specify the fnction name in the shader
+        fragmentStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragmentStage.module = fragmentShader;
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = 
+        {
+            vertexStage,
+            fragmentStage,
+        };
+
         VkPipelineColorBlendAttachmentState attachmentColor={};
         // which color channels to write to the image 
         attachmentColor.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -346,11 +388,23 @@ bool vk_init(VkContext *vkcontext, void *window)
         VkPipelineVertexInputStateCreateInfo vertexInputState;
         vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
+        VkPipelineRasterizationStateCreateInfo rasterizationState={};
+        rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        // each vertex is rendered clockwise top->right
+        rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        // culling will hide the back part
+        // check here if there's strange renderign behavior like clipping
+        rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+
 
         VkGraphicsPipelineCreateInfo graphicsPipelineInfo = {};
         graphicsPipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         graphicsPipelineInfo.pVertexInputState = &vertexInputState;
         graphicsPipelineInfo.pColorBlendState = &colorBlendState;
+        graphicsPipelineInfo.pStages = shaderStages;
+        graphicsPipelineInfo.stageCount = ArraySize(shaderStages);
+        graphicsPipelineInfo.pRasterizationState = &rasterizationState;
+
         vkCreateGraphicsPipelines(vkcontext->device, 0, 1, &graphicsPipelineInfo, 0, &vkcontext->pipeline);
     }
 
